@@ -92,9 +92,19 @@ pub fn run_exploit(
     }
 
     let mut tv = ssap::Ssap::connect(ip, tx).map_err(|e| {
+        let lower = e.to_lowercase();
+        let body = if lower.contains("refused") {
+            format!("Something at {ip} refused the connection. That address is probably not the TV, or the TV is in deep standby.")
+        } else if lower.contains("timed out") || lower.contains("timeout") {
+            format!("{ip} did not answer. Most often the TV is off, asleep, or on a different network.")
+        } else if lower.contains("unreachable") || lower.contains("no route") {
+            format!("{ip} is not on this network. Check the TV's address under Settings → Network on the TV.")
+        } else {
+            e
+        };
         Failure::new(
             "Could not reach the TV",
-            e,
+            body,
             "Check that the TV is switched on (not in deep standby), on the same Wi-Fi as this computer, and that the router is not isolating clients from each other.",
         )
     })?;

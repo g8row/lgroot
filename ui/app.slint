@@ -1,7 +1,7 @@
 // LGroot — a small native wizard for rooting LG webOS TVs.
 // Copyright 2026. Licensed under AGPL-3.0-or-later. No warranties.
 
-import { ScrollView, LineEdit } from "std-widgets.slint";
+import { ScrollView, LineEdit, Palette } from "std-widgets.slint";
 
 export struct TvItem {
     ip: string,
@@ -205,6 +205,12 @@ component Dot inherits Rectangle {
 // ---------------------------------------------------------------------------
 
 export component AppWindow inherits Window {
+    // The window is dark; tell the stock widgets (the two text fields) so they
+    // do not render white boxes with dark placeholder text.
+    init => {
+        Palette.color-scheme = ColorScheme.dark;
+    }
+
     title: "LGroot";
     width: 760px;
     height: 620px;
@@ -449,7 +455,7 @@ export component AppWindow inherits Window {
                             color: #79c0ff;
                             font-size: 11px;
                             vertical-alignment: center;
-                            overflow: elide;
+                            wrap: word-wrap;
                             horizontal-stretch: 1.0;
                         }
                     }
