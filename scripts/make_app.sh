@@ -4,6 +4,9 @@
 #   sh scripts/make_app.sh          -> dist/LGroot.app
 #   sh scripts/make_app.sh --debug  -> debug build, for development
 #
+# Set LGROOT_BIN to bundle an executable that is already built (CI uses this
+# for the universal binary) instead of running cargo.
+#
 # Everything the app needs is inside the bundle: one executable, one icon, no
 # frameworks to install and no runtime to download.
 set -eu
@@ -20,13 +23,17 @@ if [ ! -f assets/AppIcon.icns ]; then
 	echo "assets/AppIcon.icns is missing; run: python3 scripts/make_icon.py" >&2
 fi
 
-cargo build --profile "$profile"
+bin=${LGROOT_BIN:-}
+if [ -z "$bin" ]; then
+	cargo build --profile "$profile"
+	bin="target/$profile/lgroot"
+fi
 
 app="dist/LGroot.app"
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 
-cp "target/$profile/lgroot" "$app/Contents/MacOS/lgroot"
+cp "$bin" "$app/Contents/MacOS/lgroot"
 cp packaging/Info.plist "$app/Contents/Info.plist"
 if [ -f assets/AppIcon.icns ]; then
 	cp assets/AppIcon.icns "$app/Contents/Resources/AppIcon.icns"

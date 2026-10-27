@@ -5,6 +5,9 @@
 //! `slint::Timer` drains on the UI thread. That matters because pairing waits up
 //! to a minute for a human with a remote control.
 
+// No console window next to the app on Windows; debug builds keep it for logs.
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+
 use lgroot::events::{Command, Event};
 use lgroot::session::{run_exploit, with_tv};
 use lgroot::{payload, scan, ssap};

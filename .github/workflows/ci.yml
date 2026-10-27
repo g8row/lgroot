@@ -1,0 +1,111 @@
+# Build and test on every platform; on a v* tag, publish the binaries as a
+# GitHub release.
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # 22.04 so the binary runs on older glibc too.
+          - name: linux-x86_64
+            os: ubuntu-22.04
+          - name: linux-aarch64
+            os: ubuntu-22.04-arm
+          - name: windows-x86_64
+            os: windows-latest
+          - name: macos-universal
+            os: macos-latest
+            targets: x86_64-apple-darwin
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.targets }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.name }}
+
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libxkbcommon-dev libfontconfig1-dev libxcb-shape0-dev libxcb-xfixes0-dev
+
+      - name: Test
+        run: cargo test --locked
+
+      - name: Build
+        run: cargo build --release --locked
+
+      - name: Package (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p dist/lgroot
+          cp target/release/lgroot LICENSE NOTICE README.md dist/lgroot/
+          tar -C dist -czf "lgroot-${{ matrix.name }}.tar.gz" lgroot
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist/lgroot | Out-Null
+          Copy-Item target/release/lgroot.exe, LICENSE, NOTICE, README.md dist/lgroot/
+          Compress-Archive -Path dist/lgroot -DestinationPath "lgroot-${{ matrix.name }}.zip"
+
+      - name: Package (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          cargo build --release --locked --target x86_64-apple-darwin
+          mkdir -p target/universal
+          lipo -create target/release/lgroot target/x86_64-apple-darwin/release/lgroot \
+            -output target/universal/lgroot
+          lipo -info target/universal/lgroot
+          LGROOT_BIN=target/universal/lgroot sh scripts/make_app.sh
+          ditto -c -k --keepParent dist/LGroot.app "lgroot-${{ matrix.name }}.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lgroot-${{ matrix.name }}
+          path: |
+            lgroot-${{ matrix.name }}.tar.gz
+            lgroot-${{ matrix.name }}.zip
+          if-no-files-found: error
+
+  release:
+    name: Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          generate_release_notes: true
