@@ -1,0 +1,14 @@
+LGroot bundles the SlopBro exploit payload, which is licensed separately.
+
+  vendor/slopbro/  — SlopBro, Copyright 2026 throwaway96
+                     https://github.com/throwaway96/slopbro
+                     Licensed under the GNU Affero General Public License v3.0
+                     or later. Kept unmodified; see vendor/slopbro/COPYING.
+
+  assets/hbchannel.ipk — Homebrew Channel, Copyright the webOS Homebrew
+                     Project contributors. https://github.com/webosbrew/
+                     webos-homebrew-channel
+
+LGroot itself is licensed under the GNU Affero General Public License v3.0 or
+later (see LICENSE). Because it embeds the SlopBro payload, redistribution must
+comply with the AGPL: ship the complete corresponding source.

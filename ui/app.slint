@@ -1,0 +1,865 @@
+// LGroot — a small native wizard for rooting LG webOS TVs.
+// Copyright 2026. Licensed under AGPL-3.0-or-later. No warranties.
+
+import { ScrollView, LineEdit } from "std-widgets.slint";
+
+export struct TvItem {
+    ip: string,
+    name: string,
+    detail: string,
+    badge: string,
+}
+
+// ---------------------------------------------------------------------------
+// Small building blocks
+// ---------------------------------------------------------------------------
+
+component Btn inherits Rectangle {
+    in property <string> label;
+    in property <bool> primary: false;
+    in property <bool> on: true;
+    in property <length> w: 132px;
+    callback clicked();
+
+    min-width: root.w;
+    max-width: root.w;
+    min-height: 36px;
+    max-height: 36px;
+    border-radius: 8px;
+    background: !root.on ? #1c1f26 : (root.primary ? #3ea6ff : #262b34);
+    border-width: root.primary ? 0px : 1px;
+    border-color: #353b47;
+    opacity: root.on ? 1.0 : 0.45;
+
+    Text {
+        width: 100%;
+        height: 100%;
+        text: root.label;
+        color: root.primary ? #06121f : #dfe3ea;
+        font-size: 13px;
+        font-weight: 600;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    t := TouchArea {
+        width: 100%;
+        height: 100%;
+        mouse-cursor: pointer;
+        clicked => {
+            if (root.on) {
+                root.clicked();
+            }
+        }
+    }
+
+    animate background { duration: 120ms; }
+    animate opacity { duration: 120ms; }
+}
+
+component Bar inherits Rectangle {
+    in property <float> value: 0.0;
+
+    min-height: 6px;
+    max-height: 6px;
+    border-radius: 3px;
+    background: #262b34;
+
+    Rectangle {
+        width: parent.width * (root.value < 0.0 ? 0.0 : (root.value > 1.0 ? 1.0 : root.value));
+        height: parent.height;
+        border-radius: 3px;
+        background: #3ea6ff;
+        animate width { duration: 180ms; }
+    }
+}
+
+component TvRow inherits Rectangle {
+    in property <string> name;
+    in property <string> detail;
+    in property <string> badge;
+    callback picked();
+
+    min-height: 64px;
+    max-height: 64px;
+    border-radius: 10px;
+    background: touch.has-hover ? #232833 : #1b1e25;
+    border-width: 1px;
+    border-color: #262b35;
+
+    HorizontalLayout {
+        padding-left: 14px;
+        padding-right: 14px;
+        padding-top: 10px;
+        padding-bottom: 10px;
+        spacing: 12px;
+
+        VerticalLayout {
+            horizontal-stretch: 1.0;
+            alignment: center;
+            spacing: 3px;
+
+            Text {
+                text: root.name;
+                color: #eef1f5;
+                font-size: 15px;
+                font-weight: 600;
+                overflow: elide;
+            }
+            Text {
+                text: root.detail;
+                color: #8b93a1;
+                font-size: 12px;
+                overflow: elide;
+            }
+        }
+
+        Rectangle {
+            min-width: 66px;
+            max-width: 66px;
+            min-height: 22px;
+            max-height: 22px;
+            border-radius: 11px;
+            background: #17324a;
+
+            Text {
+                width: 100%;
+                height: 100%;
+                text: root.badge;
+                color: #79c0ff;
+                font-size: 10px;
+                font-weight: 700;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+    }
+
+    touch := TouchArea {
+        width: 100%;
+        height: 100%;
+        mouse-cursor: pointer;
+        clicked => {
+            root.picked();
+        }
+    }
+
+    animate background { duration: 100ms; }
+}
+
+component StepRow inherits HorizontalLayout {
+    in property <string> label;
+    in property <bool> active: false;
+    in property <bool> done: false;
+
+    spacing: 10px;
+    alignment: center;
+    min-height: 24px;
+    max-height: 24px;
+
+    Rectangle {
+        min-width: 16px;
+        max-width: 16px;
+        min-height: 16px;
+        max-height: 16px;
+        border-radius: 8px;
+        background: root.done ? #1f7a44 : (root.active ? #1d4f7a : #23262d);
+        border-width: root.done || root.active ? 0px : 1px;
+        border-color: #333944;
+
+        Text {
+            width: 100%;
+            height: 100%;
+            text: root.done ? "✓" : "•";
+            color: root.done ? #7ff0a8 : (root.active ? #8ecbff : #5b6270);
+            font-size: 11px;
+            font-weight: 700;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+
+    Text {
+        text: root.label;
+        color: root.done || root.active ? #dfe4ec : #6c7381;
+        font-size: 13px;
+        vertical-alignment: center;
+    }
+}
+
+component Dot inherits Rectangle {
+    in property <color> c: #4ade80;
+    min-width: 8px;
+    max-width: 8px;
+    min-height: 8px;
+    max-height: 8px;
+    border-radius: 4px;
+    background: root.c;
+}
+
+// ---------------------------------------------------------------------------
+// Main window
+// ---------------------------------------------------------------------------
+
+export component AppWindow inherits Window {
+    title: "LGroot";
+    width: 760px;
+    height: 620px;
+    background: #14161a;
+    default-font-size: 13px;
+
+    // pages: 0 = discover, 1 = pair, 2 = working, 3 = done, 4 = error
+    in-out property <int> page: 0;
+
+    // discovery
+    in-out property <bool> scanning: false;
+    in-out property <bool> scanning-done: false;
+    in-out property <float> scan-progress: 0.0;
+    in-out property <string> scan-text: "";
+    in-out property <[TvItem]> tvs;
+    in-out property <[string]> log-lines;
+
+    // pairing
+    in-out property <string> target-name: "";
+    in-out property <string> target-ip: "";
+    in-out property <string> pair-countdown: "60";
+    in-out property <float> pair-progress: 0.0;
+
+    // working
+    in-out property <int> step: 0;
+    in-out property <string> files-text: "";
+
+    // done / error
+    in-out property <string> result-title: "";
+    in-out property <string> result-body: "";
+    in-out property <string> result-hint: "";
+
+    // settings
+    in-out property <bool> advanced: false;
+    in-out property <string> local-ip: "";
+    in-out property <string> manual-ip: "";
+    in-out property <bool> debug-payload: false;
+    in-out property <string> test-url: "";
+
+    callback scan-requested();
+    callback tv-picked(string);
+    callback cancel-requested();
+    callback restart-requested();
+    callback probe-requested(string);
+    callback test-requested();
+    callback reboot-requested();
+    callback launch-hb-requested();
+
+    VerticalLayout {
+        padding-left: 26px;
+        padding-right: 26px;
+        padding-top: 22px;
+        padding-bottom: 18px;
+        spacing: 14px;
+
+        // ---------------- header ----------------
+        VerticalLayout {
+            spacing: 2px;
+
+            HorizontalLayout {
+                spacing: 8px;
+                alignment: start;
+
+                Text {
+                    text: "LGROOT";
+                    color: #3ea6ff;
+                    font-size: 11px;
+                    font-weight: 700;
+                    letter-spacing: 2px;
+                    vertical-alignment: center;
+                }
+                Rectangle {
+                    min-height: 1px;
+                    max-height: 1px;
+                    min-width: 40px;
+                    max-width: 40px;
+                    background: #2a2f39;
+                }
+                Text {
+                    text: "webOS homebrew installer";
+                    color: #5f6673;
+                    font-size: 11px;
+                    vertical-alignment: center;
+                }
+            }
+        }
+
+        // =====================================================================
+        // PAGE 0 — discover
+        // =====================================================================
+        if root.page == 0 : VerticalLayout {
+            spacing: 12px;
+            min-height: 0px;
+
+            Text {
+                text: root.scanning ? "Looking for your TV…" : (root.tvs.length > 0 ? "Choose your TV" : "No TVs found");
+                color: #f2f4f8;
+                font-size: 24px;
+                font-weight: 700;
+            }
+
+            Text {
+                text: root.scanning
+                    ? "Your TV must be switched on and on the same Wi-Fi as this computer."
+                    : (root.tvs.length > 0
+                        ? "Click the TV you want to root. Nothing is changed until you press OK on the TV itself."
+                        : "Make sure the TV is on and on the same Wi-Fi. Some routers block device discovery — you can type the TV's IP address instead.");
+                color: #8b93a1;
+                font-size: 13px;
+                wrap: word-wrap;
+            }
+
+            if root.scanning : VerticalLayout {
+                spacing: 6px;
+                Bar { value: root.scan-progress; }
+                Text {
+                    text: root.scan-text;
+                    color: #5f6673;
+                    font-size: 11px;
+                }
+            }
+
+            Rectangle {
+                min-height: 0px;
+                vertical-stretch: 1.0;
+                border-radius: 12px;
+                background: #101216;
+                border-width: 1px;
+                border-color: #1f242c;
+
+                if root.tvs.length == 0 : VerticalLayout {
+                    alignment: center;
+                    spacing: 8px;
+                    Text {
+                        text: root.scanning ? "Scanning…" : "—";
+                        color: #3b414c;
+                        font-size: 28px;
+                        horizontal-alignment: center;
+                    }
+                    Text {
+                        text: root.scanning ? "" : "No LG TVs answered yet";
+                        color: #4d545f;
+                        font-size: 12px;
+                        horizontal-alignment: center;
+                    }
+                }
+
+                ScrollView {
+                    width: 100%;
+                    height: 100%;
+
+                    VerticalLayout {
+                        padding: 8px;
+                        spacing: 8px;
+
+                        for tv in root.tvs : TvRow {
+                            name: tv.name;
+                            detail: tv.detail;
+                            badge: tv.badge;
+                            picked => {
+                                root.tv-picked(tv.ip);
+                            }
+                        }
+                    }
+                }
+            }
+
+            HorizontalLayout {
+                spacing: 8px;
+                alignment: end;
+                min-height: 36px;
+                max-height: 36px;
+
+                Btn {
+                    label: root.scanning ? "Scanning…" : "Scan again";
+                    on: !root.scanning;
+                    w: 130px;
+                    clicked => {
+                        root.scan-requested();
+                    }
+                }
+                Btn {
+                    label: root.advanced ? "Hide options" : "Options";
+                    w: 130px;
+                    clicked => {
+                        root.advanced = !root.advanced;
+                    }
+                }
+            }
+
+            if root.advanced : Rectangle {
+                border-radius: 10px;
+                background: #171a20;
+                border-width: 1px;
+                border-color: #232833;
+
+                VerticalLayout {
+                    padding: 14px;
+                    spacing: 10px;
+
+                    HorizontalLayout {
+                        spacing: 10px;
+
+                        Text {
+                            text: "This computer's IP";
+                            color: #8b93a1;
+                            font-size: 12px;
+                            min-width: 150px;
+                            max-width: 150px;
+                            vertical-alignment: center;
+                        }
+                        LineEdit {
+                            text <=> root.local-ip;
+                            placeholder-text: "auto-detect";
+                            min-width: 180px;
+                            max-width: 180px;
+                            min-height: 30px;
+                            max-height: 30px;
+                        }
+                        Text {
+                            text: "Only change this if the TV can't download the installer.";
+                            color: #4d545f;
+                            font-size: 11px;
+                            vertical-alignment: center;
+                            wrap: word-wrap;
+                            horizontal-stretch: 1.0;
+                        }
+                    }
+
+                    HorizontalLayout {
+                        spacing: 10px;
+
+                        Btn {
+                            label: "Test TV → PC";
+                            w: 150px;
+                            clicked => {
+                                root.test-requested();
+                            }
+                        }
+                        Text {
+                            text: root.test-url;
+                            color: #79c0ff;
+                            font-size: 11px;
+                            vertical-alignment: center;
+                            overflow: elide;
+                            horizontal-stretch: 1.0;
+                        }
+                    }
+
+                    HorizontalLayout {
+                        spacing: 10px;
+
+                        LineEdit {
+                            text <=> root.manual-ip;
+                            placeholder-text: "TV IP address, e.g. 192.168.1.50";
+                            horizontal-stretch: 1.0;
+                            min-height: 30px;
+                            max-height: 30px;
+                        }
+                        Btn {
+                            label: "Use this IP";
+                            w: 120px;
+                            on: root.manual-ip != "";
+                            clicked => {
+                                root.probe-requested(root.manual-ip);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // =====================================================================
+        // PAGE 1 — pairing
+        // =====================================================================
+        if root.page == 1 : VerticalLayout {
+            spacing: 14px;
+            vertical-stretch: 1.0;
+
+            Rectangle {
+                vertical-stretch: 1.0;
+                border-radius: 14px;
+                background: #101216;
+                border-width: 1px;
+                border-color: #1f242c;
+
+                VerticalLayout {
+                    alignment: center;
+                    spacing: 14px;
+                    padding: 30px;
+
+                    Text {
+                        text: "👉";
+                        font-size: 44px;
+                        horizontal-alignment: center;
+                    }
+
+                    Text {
+                        text: "Look at your TV";
+                        color: #f2f4f8;
+                        font-size: 28px;
+                        font-weight: 700;
+                        horizontal-alignment: center;
+                    }
+
+                    Text {
+                        text: "A message is on your TV asking to allow “SlopBro”.\nPress OK or Yes on the remote to accept.";
+                        color: #a9b1bf;
+                        font-size: 15px;
+                        horizontal-alignment: center;
+                        wrap: word-wrap;
+                    }
+
+                    Rectangle {
+                        min-width: 220px;
+                        max-width: 220px;
+                        min-height: 34px;
+                        max-height: 34px;
+                        border-radius: 17px;
+                        background: #17324a;
+
+                        Text {
+                            width: 100%;
+                            height: 100%;
+                            text: root.target-ip + "  ·  " + root.target-name;
+                            color: #79c0ff;
+                            font-size: 12px;
+                            font-weight: 600;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            overflow: elide;
+                        }
+                    }
+
+                    Text {
+                        text: root.pair-countdown;
+                        color: root.pair-countdown == "0" ? #f87171 : #f2f4f8;
+                        font-size: 40px;
+                        font-weight: 700;
+                        horizontal-alignment: center;
+                    }
+
+                    Rectangle {
+                        min-width: 300px;
+                        max-width: 300px;
+                        Bar { value: root.pair-progress; }
+                    }
+
+                    Text {
+                        text: "If nothing appears, wait a few seconds — the prompt sometimes shows up in a corner.\nThe TV must be awake and on the same network.";
+                        color: #5f6673;
+                        font-size: 12px;
+                        horizontal-alignment: center;
+                        wrap: word-wrap;
+                    }
+                }
+            }
+
+            HorizontalLayout {
+                alignment: end;
+                min-height: 36px;
+                max-height: 36px;
+                Btn {
+                    label: "Cancel";
+                    w: 130px;
+                    clicked => {
+                        root.cancel-requested();
+                    }
+                }
+            }
+        }
+
+        // =====================================================================
+        // PAGE 2 — working
+        // =====================================================================
+        if root.page == 2 : VerticalLayout {
+            spacing: 12px;
+
+            Text {
+                text: "Installing…";
+                color: #f2f4f8;
+                font-size: 24px;
+                font-weight: 700;
+            }
+
+            Text {
+                text: "Do not touch the remote, and keep this window open. Your TV screen shows detailed progress.";
+                color: #8b93a1;
+                font-size: 13px;
+                wrap: word-wrap;
+            }
+
+            Rectangle {
+                border-radius: 10px;
+                background: #101216;
+                border-width: 1px;
+                border-color: #1f242c;
+
+                VerticalLayout {
+                    padding: 14px;
+                    spacing: 8px;
+
+                    StepRow { label: "Connected to the TV"; done: root.step > 0; active: root.step == 0; }
+                    StepRow { label: "Paired"; done: root.step > 1; active: root.step == 1; }
+                    StepRow { label: "Installer delivered"; done: root.step > 2; active: root.step == 2; }
+                    StepRow { label: "Homebrew Channel verified"; done: root.step > 3; active: root.step == 3; }
+                }
+            }
+
+            if root.files-text != "" : Text {
+                text: root.files-text;
+                color: #5f6673;
+                font-size: 11px;
+            }
+
+            Rectangle {
+                vertical-stretch: 1.0;
+                border-radius: 10px;
+                background: #0d0f12;
+                border-width: 1px;
+                border-color: #1c2027;
+
+                ScrollView {
+                    width: 100%;
+                    height: 100%;
+
+                    VerticalLayout {
+                        padding: 10px;
+                        spacing: 3px;
+
+                        for line in root.log-lines : Text {
+                            text: line;
+                            color: #6d7482;
+                            font-size: 10px;
+                            font-family: "monospace";
+                            wrap: word-wrap;
+                        }
+                    }
+                }
+            }
+        }
+
+        // =====================================================================
+        // PAGE 3 — done
+        // =====================================================================
+        if root.page == 3 : VerticalLayout {
+            spacing: 16px;
+            vertical-stretch: 1.0;
+
+            HorizontalLayout {
+                alignment: center;
+                min-height: 72px;
+                max-height: 72px;
+                Rectangle {
+                    min-width: 72px;
+                    max-width: 72px;
+                    min-height: 72px;
+                    max-height: 72px;
+                    border-radius: 36px;
+                    background: #12301d;
+                    border-width: 1px;
+                    border-color: #1f5c36;
+
+                    Text {
+                        width: 100%;
+                        height: 100%;
+                        text: "✓";
+                        color: #4ade80;
+                        font-size: 34px;
+                        font-weight: 700;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+
+            Text {
+                text: "Homebrew Channel is installed";
+                color: #f2f4f8;
+                font-size: 24px;
+                font-weight: 700;
+                horizontal-alignment: center;
+            }
+
+            Text {
+                text: "Your TV is rooted. Restart it so the Homebrew Channel shows up in the app list.\nAfter restarting, open Homebrew Channel and install whatever you like.";
+                color: #8b93a1;
+                font-size: 13px;
+                horizontal-alignment: center;
+                wrap: word-wrap;
+            }
+
+            Rectangle {
+                border-radius: 10px;
+                background: #1d1710;
+                border-width: 1px;
+                border-color: #3d2f14;
+
+                VerticalLayout {
+                    padding: 12px;
+                    Text {
+                        text: "⚠  Do not install LG's Dev Mode app while your TV is rooted. If it is installed, uninstall it before restarting.";
+                        color: #d7a55a;
+                        font-size: 12px;
+                        wrap: word-wrap;
+                    }
+                }
+            }
+
+            HorizontalLayout {
+                alignment: center;
+                spacing: 8px;
+                min-height: 36px;
+                max-height: 36px;
+
+                Btn {
+                    label: "Restart TV";
+                    primary: true;
+                    w: 140px;
+                    clicked => {
+                        root.reboot-requested();
+                    }
+                }
+                Btn {
+                    label: "Open Homebrew";
+                    w: 160px;
+                    clicked => {
+                        root.launch-hb-requested();
+                    }
+                }
+                Btn {
+                    label: "Done";
+                    w: 100px;
+                    clicked => {
+                        root.restart-requested();
+                    }
+                }
+            }
+
+            Rectangle {
+                vertical-stretch: 1.0;
+                background: transparent;
+            }
+        }
+
+        // =====================================================================
+        // PAGE 4 — error
+        // =====================================================================
+        if root.page == 4 : VerticalLayout {
+            spacing: 16px;
+            vertical-stretch: 1.0;
+
+            HorizontalLayout {
+                alignment: center;
+                min-height: 72px;
+                max-height: 72px;
+                Rectangle {
+                    min-width: 72px;
+                    max-width: 72px;
+                    min-height: 72px;
+                    max-height: 72px;
+                    border-radius: 36px;
+                    background: #2b1414;
+                    border-width: 1px;
+                    border-color: #5c2020;
+
+                    Text {
+                        width: 100%;
+                        height: 100%;
+                        text: "!";
+                        color: #f87171;
+                        font-size: 34px;
+                        font-weight: 700;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+
+            Text {
+                text: root.result-title;
+                color: #f2f4f8;
+                font-size: 22px;
+                font-weight: 700;
+                horizontal-alignment: center;
+                wrap: word-wrap;
+            }
+
+            Text {
+                text: root.result-body;
+                color: #9aa2b0;
+                font-size: 13px;
+                horizontal-alignment: center;
+                wrap: word-wrap;
+            }
+
+            if root.result-hint != "" : Rectangle {
+                border-radius: 10px;
+                background: #171a20;
+                border-width: 1px;
+                border-color: #232833;
+
+                VerticalLayout {
+                    padding: 12px;
+                    Text {
+                        text: root.result-hint;
+                        color: #79c0ff;
+                        font-size: 12px;
+                        wrap: word-wrap;
+                    }
+                }
+            }
+
+            HorizontalLayout {
+                alignment: center;
+                spacing: 8px;
+                min-height: 36px;
+                max-height: 36px;
+
+                Btn {
+                    label: "Try again";
+                    primary: true;
+                    w: 130px;
+                    clicked => {
+                        root.restart-requested();
+                    }
+                }
+            }
+
+            Rectangle {
+                vertical-stretch: 1.0;
+                background: transparent;
+            }
+        }
+
+        // ---------------- footer ----------------
+        HorizontalLayout {
+            spacing: 8px;
+            min-height: 16px;
+            max-height: 16px;
+
+            Dot { c: root.page == 4 ? #f87171 : (root.page == 3 ? #4ade80 : (root.page == 2 || root.page == 1 ? #3ea6ff : #3b414c)); }
+
+            Text {
+                text: root.page == 0 ? "Ready" : (root.page == 1 ? "Waiting for you" : (root.page == 2 ? "Working" : (root.page == 3 ? "Done" : "Stopped")));
+                color: #4d545f;
+                font-size: 10px;
+                vertical-alignment: center;
+            }
+
+            Rectangle { horizontal-stretch: 1.0; background: transparent; }
+
+            Text {
+                text: "AGPL-3.0 · exploit payload by throwaway96";
+                color: #3b414c;
+                font-size: 10px;
+                vertical-alignment: center;
+            }
+        }
+    }
+}
