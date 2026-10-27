@@ -18,12 +18,21 @@ use std::time::Duration;
 
 slint::include_modules!();
 
+#[cfg(target_os = "macos")]
+const MONO_FONT: &str = "Menlo";
+#[cfg(target_os = "windows")]
+const MONO_FONT: &str = "Consolas";
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+const MONO_FONT: &str = "DejaVu Sans Mono";
+
 fn main() -> Result<(), slint::PlatformError> {
     // rustls needs a process-wide crypto provider when only one is compiled in,
     // but installing it explicitly avoids any ambiguity.
     let _ = rustls::crypto::ring::default_provider().install_default();
 
     let ui = AppWindow::new()?;
+    ui.set_detected_ip(scan::default_local_ip().unwrap_or_default().into());
+    ui.global::<Theme>().set_mono(MONO_FONT.into());
 
     let (event_tx, event_rx) = mpsc::channel::<Event>();
     let (command_tx, command_rx) = mpsc::channel::<Command>();
@@ -83,16 +92,10 @@ fn main() -> Result<(), slint::PlatformError> {
             let ip = ip.as_str().trim().to_string();
             let Some(ui) = weak.upgrade() else { return };
             if ip.parse::<std::net::Ipv4Addr>().is_err() {
-                ui.set_result_title("That is not an IP address".into());
-                ui.set_result_body(
-                    format!("“{ip}” is not an IPv4 address. It should look like 192.168.1.50.")
+                ui.set_manual_error(
+                    format!("“{ip}” is not an IP address. It should look like 192.168.1.50.")
                         .into(),
                 );
-                ui.set_result_hint(
-                    "You can read it from the TV under Settings → Network → Wired/Wi-Fi connection."
-                        .into(),
-                );
-                ui.set_page(4);
                 return;
             }
             cancel.store(false, Ordering::Relaxed);
@@ -124,7 +127,6 @@ fn main() -> Result<(), slint::PlatformError> {
             cancel.store(false, Ordering::Relaxed);
             if let Some(ui) = weak.upgrade() {
                 ui.set_page(0);
-                ui.set_advanced(false);
             }
             let _ = command_tx.send(Command::Scan);
         }
@@ -162,7 +164,7 @@ fn main() -> Result<(), slint::PlatformError> {
         let weak = ui.as_weak();
         let names = names.clone();
         let mut tvs: Vec<TvItem> = Vec::new();
-        let mut logs: Vec<slint::SharedString> = Vec::new();
+        let mut logs: Vec<String> = Vec::new();
         move || {
             let Some(ui) = weak.upgrade() else { return };
             while let Ok(event) = event_rx.try_recv() {
@@ -174,15 +176,18 @@ fn main() -> Result<(), slint::PlatformError> {
                             names.clear();
                         }
                         ui.set_tvs(ModelRc::new(VecModel::from(tvs.clone())));
-                        ui.set_log_lines(ModelRc::new(VecModel::from(logs.clone())));
+                        ui.set_log_text("".into());
                         ui.set_scanning(true);
+                        ui.set_scanning_done(false);
                         ui.set_scan_progress(0.0);
-                        ui.set_scan_text("starting…".into());
+                        ui.set_scan_total(0);
+                        ui.set_scan_text("".into());
                         ui.set_page(0);
                     }
                     Event::ScanProgress { done, total } => {
                         ui.set_scan_progress(done as f32 / total.max(1) as f32);
-                        ui.set_scan_text(format!("Scanned {done} of {total} addresses").into());
+                        ui.set_scan_total(total as i32);
+                        ui.set_scan_text(format!("{done} of {total}").into());
                     }
                     Event::TvFound(tv) => {
                         if let Ok(mut names) = names.lock() {
@@ -198,9 +203,10 @@ fn main() -> Result<(), slint::PlatformError> {
                     }
                     Event::ScanFinished => {
                         ui.set_scanning(false);
+                        ui.set_scanning_done(true);
                         ui.set_scan_progress(1.0);
                         if tvs.is_empty() {
-                            ui.set_scan_text("Nothing answered".into());
+                            ui.set_scan_text("".into());
                         } else {
                             ui.set_scan_text(
                                 format!(
@@ -225,24 +231,23 @@ fn main() -> Result<(), slint::PlatformError> {
                         if ui.get_page() != 1 {
                             continue;
                         }
-                        ui.set_pair_countdown(left.to_string().into());
+                        ui.set_pair_countdown(format!("{}:{:02}", left / 60, left % 60).into());
                         ui.set_pair_progress(left as f32 / total.max(1) as f32);
                     }
                     Event::Files { served, total } => {
-                        ui.set_files_text(
-                            format!("{served} of {total} installer files sent to the TV").into(),
-                        );
+                        ui.set_files_text(format!("{served} of {total} files").into());
+                        ui.set_files_progress(served as f32 / total.max(1) as f32);
                     }
                     Event::TestUrl(text) => {
                         ui.set_test_url(text.into());
                     }
                     Event::Log(line) => {
                         eprintln!("[lgroot] {line}");
-                        logs.push(line.into());
+                        logs.push(line);
                         if logs.len() > 400 {
                             logs.remove(0);
                         }
-                        ui.set_log_lines(ModelRc::new(VecModel::from(logs.clone())));
+                        ui.set_log_text(logs.join("\n").into());
                     }
                     Event::Done => {
                         if ui.get_page() == 0 {
@@ -278,9 +283,12 @@ fn begin_run(ui: &AppWindow, ip: &str, name: &str) {
     ui.set_target_name(name.into());
     ui.set_step(0);
     ui.set_files_text("".into());
-    ui.set_pair_countdown("60".into());
+    ui.set_files_progress(0.0);
+    ui.set_pair_countdown("1:00".into());
     ui.set_pair_progress(1.0);
-    ui.set_log_lines(ModelRc::new(VecModel::from(Vec::<slint::SharedString>::new())));
+    ui.set_log_text("".into());
+    ui.set_manual_error("".into());
+    ui.set_connect_open(false);
     ui.set_page(1);
 }
 
@@ -304,9 +312,7 @@ fn worker(tx: Sender<Event>, rx: Receiver<Command>, cancel: Arc<AtomicBool>) {
                         let local = scan::default_local_ip().unwrap_or_else(|| "<this computer>".into());
                         let url = format!("http://{local}:{}/", server.port);
                         let _ = tx.send(Event::Log(format!("test server listening on {url}")));
-                        let _ = tx.send(Event::TestUrl(
-                            format!("Open {url} in the TV's web browser — it should say “Here's your slop, bro!”"),
-                        ));
+                        let _ = tx.send(Event::TestUrl(url));
                         test_server = Some(server);
                     }
                     Err(e) => {

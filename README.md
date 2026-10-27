@@ -10,17 +10,17 @@ exploit payload and the Homebrew Channel package compiled in.
 The window looks like this:
 
 ```
-┌──────────────────────────────────────────────┐
-│ LGROOT   ───                webOS homebrew   │
-│                                              │
-│ Choose your TV                               │
-│ Click the TV you want to root.               │
-│ ┌──────────────────────────────────────────┐ │
-│ │  Living Room TV                 LG TV    │ │
-│ │  192.168.1.50 · OLED55C1PUB              │ │
-│ └──────────────────────────────────────────┘ │
-│                       [ Scan again ] [Options]│
-└──────────────────────────────────────────────┘
+┌────────────────┬─────────────────────────────────────┐
+│ LGroot         │ Choose your TV                      │
+│                │ Make sure the TV is on and on the   │
+│ ● Find your TV │ same network as this computer.      │
+│ ○ Allow on TV  │ ┌─────────────────────────────────┐ │
+│ ○ Install      │ │ Living Room TV          LG TV > │ │
+│ ○ Finish       │ │ 192.168.1.50 · OLED55C1PUB      │ │
+│                │ └─────────────────────────────────┘ │
+│ Network        ├─────────────────────────────────────┤
+│ settings       │ Enter an IP address    [Scan again] │
+└────────────────┴─────────────────────────────────────┘
 ```
 
 ## Use it
@@ -114,11 +114,11 @@ that model. Retry once; if it happens again, look up your model on
 
 **The install starts but Homebrew Channel never appears.**
 Look at the TV screen. If `autoroot.sh` reports a failure, the TV's firmware is
-probably patched. If it says the download failed, use **Options → this
-computer's IP** and type the address manually — the automatic choice can pick a
+probably patched. If it says the download failed, use **Network settings → This
+computer's address** and type the address manually — the automatic choice can pick a
 VPN or a second network card.
 
-**Options → Test TV → PC.**
+**Network settings → Test connection.**
 Starts a tiny web server and gives you a URL. Open that URL in the TV's browser
 (or any device on the same Wi-Fi). If you see *"Here's your slop, bro!"*, the TV
 can reach this computer and the problem is elsewhere. If you do not, a firewall
