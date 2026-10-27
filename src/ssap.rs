@@ -516,13 +516,16 @@ impl Ssap {
         })
     }
 
-    /// Pair. Returns the client key. `tick(left, total)` is called about once a
-    /// second so the UI can show a countdown; the TV waits for a human.
+    /// Pair. Returns the client key. `tick(left, total)` is called four times a
+    /// second so the UI can show a countdown, because the TV is waiting for a
+    /// human. `cancelled` is polled at the same cadence: when the user gives up
+    /// we stop waiting instead of tying up the worker for a whole minute.
     pub fn register(
         &mut self,
         client_key: &str,
         timeout: Duration,
         mut tick: impl FnMut(u32, u32),
+        cancelled: impl Fn() -> bool,
     ) -> Result<String, String> {
         let mut payload = json!({
             "forcePairing": false,
@@ -541,6 +544,9 @@ impl Ssap {
         let mut prompted = false;
 
         loop {
+            if cancelled() {
+                return Err("cancelled".into());
+            }
             let left = deadline.saturating_duration_since(Instant::now());
             if left.is_zero() {
                 return Err("timed out waiting for the TV".into());

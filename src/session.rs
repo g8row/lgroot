@@ -37,7 +37,7 @@ pub fn with_tv(tx: &Sender<Event>, ip: &str, action: impl FnOnce(&mut ssap::Ssap
         }
     };
     let stored = keystore::load(ip);
-    match tv.register(&stored, Duration::from_secs(15), |_, _| {}) {
+    match tv.register(&stored, Duration::from_secs(15), |_, _| {}, || false) {
         Ok(_) => action(&mut tv),
         Err(e) => {
             let _ = tx.send(Event::Log(format!("could not reconnect: {e}")));
@@ -111,9 +111,14 @@ pub fn run_exploit(
 
     let tick_tx = tx.clone();
     let key = tv
-        .register(&stored, Duration::from_secs(60), move |left, total| {
-            let _ = tick_tx.send(Event::PairCountdown { left, total });
-        })
+        .register(
+            &stored,
+            Duration::from_secs(60),
+            move |left, total| {
+                let _ = tick_tx.send(Event::PairCountdown { left, total });
+            },
+            || cancel.load(Ordering::Relaxed),
+        )
         .map_err(|e| {
             let lower = e.to_lowercase();
             if lower.contains("cancel") || e.contains("403") {
