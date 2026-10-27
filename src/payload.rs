@@ -146,6 +146,11 @@ fn spawn(tx: Sender<Event>, mode: Mode) -> Result<Server, String> {
 }
 
 fn handle(mut stream: TcpStream, tx: &Sender<Event>, mode: &Mode) {
+    // BSD-derived systems (macOS) let an accepted socket inherit O_NONBLOCK
+    // from the listening socket, so a non-blocking accept leaves every
+    // connection non-blocking too. Without this, a write that outruns the
+    // socket buffer returns EAGAIN and the 1.7 MB IPK arrives truncated.
+    let _ = stream.set_nonblocking(false);
     let _ = stream.set_read_timeout(Some(Duration::from_secs(3)));
     let _ = stream.set_write_timeout(Some(Duration::from_secs(10)));
 
