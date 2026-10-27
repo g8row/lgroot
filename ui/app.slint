@@ -147,21 +147,20 @@ component TvRow inherits Rectangle {
     animate background { duration: 100ms; }
 }
 
-component StepRow inherits HorizontalLayout {
+component StepRow inherits Rectangle {
     in property <string> label;
     in property <bool> active: false;
     in property <bool> done: false;
 
-    spacing: 10px;
-    alignment: center;
-    min-height: 24px;
-    max-height: 24px;
+    min-height: 26px;
+    max-height: 26px;
+    background: transparent;
 
     Rectangle {
-        min-width: 16px;
-        max-width: 16px;
-        min-height: 16px;
-        max-height: 16px;
+        x: 0;
+        y: 5px;
+        width: 16px;
+        height: 16px;
         border-radius: 8px;
         background: root.done ? #1f7a44 : (root.active ? #1d4f7a : #23262d);
         border-width: root.done || root.active ? 0px : 1px;
@@ -180,6 +179,10 @@ component StepRow inherits HorizontalLayout {
     }
 
     Text {
+        x: 26px;
+        y: 0;
+        width: parent.width - 26px;
+        height: parent.height;
         text: root.label;
         color: root.done || root.active ? #dfe4ec : #6c7381;
         font-size: 13px;
@@ -545,9 +548,19 @@ export component AppWindow inherits Window {
                     }
 
                     Rectangle {
-                        min-width: 300px;
-                        max-width: 300px;
-                        Bar { value: root.pair-progress; }
+                        width: 100%;
+                        min-height: 6px;
+                        max-height: 6px;
+                        border-radius: 3px;
+                        background: #262b34;
+
+                        Rectangle {
+                            width: parent.width * (root.pair-progress < 0.0 ? 0.0 : (root.pair-progress > 1.0 ? 1.0 : root.pair-progress));
+                            height: parent.height;
+                            border-radius: 3px;
+                            background: #3ea6ff;
+                            animate width { duration: 180ms; }
+                        }
                     }
 
                     Text {
@@ -650,6 +663,7 @@ export component AppWindow inherits Window {
         if root.page == 3 : VerticalLayout {
             spacing: 16px;
             vertical-stretch: 1.0;
+            alignment: center;
 
             HorizontalLayout {
                 alignment: center;
@@ -740,11 +754,6 @@ export component AppWindow inherits Window {
                     }
                 }
             }
-
-            Rectangle {
-                vertical-stretch: 1.0;
-                background: transparent;
-            }
         }
 
         // =====================================================================
@@ -753,6 +762,7 @@ export component AppWindow inherits Window {
         if root.page == 4 : VerticalLayout {
             spacing: 16px;
             vertical-stretch: 1.0;
+            alignment: center;
 
             HorizontalLayout {
                 alignment: center;
@@ -829,11 +839,6 @@ export component AppWindow inherits Window {
                         root.restart-requested();
                     }
                 }
-            }
-
-            Rectangle {
-                vertical-stretch: 1.0;
-                background: transparent;
             }
         }
 
