@@ -50,7 +50,8 @@ Check [cani.rootmy.tv] for your exact model before you start.
 ## Build
 
 Requires Rust 1.82 or newer. The build vendors nothing; all dependencies come
-from crates.io.
+from crates.io. The UI uses Slint's software renderer, so there is no OpenGL or
+GPU requirement — it works over screen sharing and inside virtual machines.
 
 ```sh
 cargo build --release
